@@ -26,7 +26,7 @@ func TestOpenID(t *testing.T) {
 }
 
 func TestDecodeJWT(t *testing.T) {
-	testcases := []struct {
+	testCases := []struct {
 		Name       string
 		JWT        string
 		ExpectData map[string]interface{}
@@ -83,17 +83,16 @@ func TestDecodeJWT(t *testing.T) {
 			ExpectErr: false,
 		},
 	}
-	for i, tc := range testcases {
-		data, err := decodeJWT(tc.JWT)
-		if tc.ExpectErr != (err != nil) {
-			t.Errorf("%d: expected error %v, got %v", i, tc.ExpectErr, err)
-			continue
-
-		}
-		if !reflect.DeepEqual(data, tc.ExpectData) {
-			t.Errorf("%d: expected\n\t%#v\ngot\n\t%#v", i, tc.ExpectData, data)
-			continue
-		}
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			data, err := decodeJWT(tc.JWT)
+			if tc.ExpectErr != (err != nil) {
+				t.Fatalf("expected error %v, got %v", tc.ExpectErr, err)
+			}
+			if !reflect.DeepEqual(data, tc.ExpectData) {
+				t.Fatalf("expected\n\t%#v\ngot\n\t%#v", tc.ExpectData, data)
+			}
+		})
 	}
 }
 
