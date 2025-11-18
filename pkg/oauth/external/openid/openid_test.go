@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/openshift/oauth-server/pkg/oauth/external"
 )
 
@@ -86,10 +88,98 @@ func TestDecodeJWT(t *testing.T) {
 		if tc.ExpectErr != (err != nil) {
 			t.Errorf("%d: expected error %v, got %v", i, tc.ExpectErr, err)
 			continue
+
 		}
 		if !reflect.DeepEqual(data, tc.ExpectData) {
 			t.Errorf("%d: expected\n\t%#v\ngot\n\t%#v", i, tc.ExpectData, data)
 			continue
 		}
+	}
+}
+
+func TestGetGroupClaimValue(t *testing.T) {
+	testCases := []struct {
+		Name           string
+		Data           map[string]any
+		Claims         []string
+		ExpectedGroups []string
+		ExpectErr      bool
+	}{
+		{
+			Name:           "unset",
+			Data:           map[string]any{},
+			Claims:         []string{"groups"},
+			ExpectedGroups: nil,
+			ExpectErr:      false,
+		},
+		{
+			Name:           "string",
+			Data:           map[string]any{"groups": "groupA"},
+			Claims:         []string{"groups"},
+			ExpectedGroups: []string{"groupA"},
+			ExpectErr:      false,
+		},
+		{
+			Name:           "other simple type ignored",
+			Data:           map[string]any{"groups": 10},
+			Claims:         []string{"groups"},
+			ExpectedGroups: nil,
+			ExpectErr:      true,
+		},
+		{
+			Name:           "array with string values",
+			Data:           map[string]any{"groups": []any{"groupA", "groupB"}},
+			Claims:         []string{"groups"},
+			ExpectedGroups: []string{"groupA", "groupB"},
+			ExpectErr:      false,
+		},
+		{
+			Name:           "array with int values",
+			Data:           map[string]any{"groups": []any{10, 20}},
+			Claims:         []string{"groups"},
+			ExpectedGroups: nil,
+			ExpectErr:      true,
+		},
+		{
+			Name:           "string-encoded array",
+			Data:           map[string]any{"groups": `["groupA", "groupB"]`},
+			Claims:         []string{"groups"},
+			ExpectedGroups: []string{"groupA", "groupB"},
+			ExpectErr:      false,
+		},
+		{
+			Name:           "string-encoded array wrapped in an array",
+			Data:           map[string]any{"groups": []any{`["groupA", "groupB"]`}},
+			Claims:         []string{"groups"},
+			ExpectedGroups: []string{"groupA", "groupB"},
+			ExpectErr:      false,
+		},
+		{
+			Name:           "invalid string-encoded array",
+			Data:           map[string]any{"groups": `[groupA, groupB]`},
+			Claims:         []string{"groups"},
+			ExpectedGroups: nil,
+			ExpectErr:      true,
+		},
+		{
+			Name:           "multiple string-encoded arrays not unwrapped",
+			Data:           map[string]any{"groups": []any{`["groupA", "groupB"]`, `["groupC"]`}},
+			Claims:         []string{"groups"},
+			ExpectedGroups: []string{`["groupA", "groupB"]`, `["groupC"]`},
+			ExpectErr:      false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.Name, func(t *testing.T) {
+			groups, err := getGroupClaimValue(tc.Data, tc.Claims...)
+			if tc.ExpectErr != (err != nil) {
+				t.Fatalf("Unexpected error '%v', expected '%v'", err, tc.ExpectErr)
+			}
+
+			if !cmp.Equal(groups, tc.ExpectedGroups) {
+				t.Fatalf("Unexpected groups:\n%s", cmp.Diff(tc.ExpectedGroups, groups))
+			}
+		})
 	}
 }

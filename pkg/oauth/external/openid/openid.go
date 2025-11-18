@@ -213,7 +213,11 @@ func (p provider) GetUserIdentity(data *osincli.AccessData) (authapi.UserIdentit
 		identity.Extra[authapi.IdentityDisplayNameKey] = name
 	}
 
-	if groups, ok := getArrayOrStringClaimValue(claims, p.GroupClaims...); ok {
+	groups, err := getGroupClaimValue(claims, p.GroupClaims...)
+	if err != nil {
+		return nil, fmt.Errorf("could not retrieve group claim for %#v from %#v: %w", p.GroupClaims, claims, err)
+	}
+	if len(groups) > 0 {
 		identity.ProviderGroups = groups
 	}
 
@@ -232,24 +236,50 @@ func getClaimValue(data map[string]interface{}, claims ...string) (string, bool)
 	return "", false
 }
 
-func getArrayOrStringClaimValue(data map[string]interface{}, claims ...string) ([]string, bool) {
+func getArrayOrStringClaimValue(data map[string]interface{}, claims ...string) ([]string, error) {
 	for _, claim := range claims {
 		val, ok := data[claim]
 		if !ok {
 			continue
 		}
+
 		switch valTyped := val.(type) {
-		case []interface{}:
+		case []any:
 			ret := make([]string, 0, len(valTyped))
-			for _, s := range valTyped {
-				ret = append(ret, s.(string))
+			for _, v := range valTyped {
+				if s, ok := v.(string); ok {
+					ret = append(ret, s)
+				} else {
+					return nil, fmt.Errorf("expected string array item, got %T", v)
+				}
 			}
-			return ret, true
+			return ret, nil
+
 		case string:
-			return []string{valTyped}, true
+			return []string{valTyped}, nil
+
+		default:
+			return nil, fmt.Errorf("expected array or string, got %T", val)
 		}
 	}
-	return nil, false
+	return nil, nil
+}
+
+func getGroupClaimValue(data map[string]interface{}, claims ...string) ([]string, error) {
+	groups, err := getArrayOrStringClaimValue(data, claims...)
+	if err != nil || len(groups) == 0 {
+		return groups, err
+	}
+
+	if len(groups) == 1 && strings.HasPrefix(groups[0], "[") && strings.HasSuffix(groups[0], "]") {
+		var actualGroups []string
+		if err := json.Unmarshal([]byte(groups[0]), &actualGroups); err != nil {
+			return nil, fmt.Errorf("could not unmarshal group claim array string: %w", err)
+		}
+		return actualGroups, nil
+	}
+
+	return groups, nil
 }
 
 // fetch and decode JSON from the given UserInfo URL
