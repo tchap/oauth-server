@@ -171,6 +171,7 @@ func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest
 			SessionAuth:                    sessionAuth,
 			BootstrapUserDataGetter:        bootstrapUserDataGetter,
 			TokenReviewClient:              kubeClient.AuthenticationV1().TokenReviews(),
+			proxyTrustedCA:                 os.Getenv("PROXY_TRUSTED_CA_FILE"),
 
 			postStartHooks: map[string]genericapiserver.PostStartHookFunc{
 				"openshift.io-StartUserInformer": func(ctx genericapiserver.PostStartHookContext) error {
@@ -180,6 +181,14 @@ func NewOAuthServerConfig(oauthConfig osinv1.OAuthConfig, userClientConfig *rest
 			},
 		},
 	}
+
+	ret.ExtraOAuthConfig.postStartHooks["openshift.io-StartDynamicCAWatchers"] = func(ctx genericapiserver.PostStartHookContext) error {
+		for _, rt := range ret.ExtraOAuthConfig.dynamicTransports {
+			go rt.run(ctx)
+		}
+		return nil
+	}
+
 	genericConfig.BuildHandlerChainFunc = ret.buildHandlerChainForOAuth
 
 	return ret, nil
@@ -282,6 +291,9 @@ type ExtraOAuthConfig struct {
 	TokenReviewClient       authenticationv1client.TokenReviewInterface
 
 	postStartHooks map[string]genericapiserver.PostStartHookFunc
+
+	proxyTrustedCA    string
+	dynamicTransports []*dynamicCARoundTripper
 }
 
 type OAuthServerConfig struct {
