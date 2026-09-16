@@ -266,6 +266,7 @@ func TestUserGroupsMapper_removeUserFromGroup(t *testing.T) {
 			groupWatcher, err := fakeUserClient.UserV1().Groups().Watch(testCtx, metav1.ListOptions{})
 			require.NoError(t, err)
 			defer groupWatcher.Stop()
+			consumeInitialGroupWatchEvent(groupWatcher, tt.group)
 
 			m := &UserGroupsMapper{
 				groupsLister: userlisterv1.NewGroupLister(indexer),
@@ -367,6 +368,7 @@ func TestUserGroupsMapper_addUserToGroup(t *testing.T) {
 			groupWatcher, err := fakeUserClient.UserV1().Groups().Watch(testCtx, metav1.ListOptions{})
 			require.NoError(t, err)
 			defer groupWatcher.Stop()
+			consumeInitialGroupWatchEvent(groupWatcher, tt.group)
 
 			m := &UserGroupsMapper{
 				groupsLister: userlisterv1.NewGroupLister(indexer),
@@ -471,6 +473,17 @@ func watchForGroupEvents(
 			return
 		}
 	}
+}
+
+// consumeInitialGroupWatchEvent discards the synthetic initial state emitted by
+// the fake client's tracker. Kubernetes 1.36 made this visible to watchers,
+// while these tests are interested only in events caused by the operation.
+func consumeInitialGroupWatchEvent(groupWatcher watch.Interface, initialGroup *userv1.Group) {
+	if initialGroup == nil {
+		return
+	}
+
+	<-groupWatcher.ResultChan()
 }
 
 func TestRemoveUserFromGroup_DoesNotMutateCachedObject(t *testing.T) {
